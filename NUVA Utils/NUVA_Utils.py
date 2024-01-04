@@ -156,11 +156,11 @@ def query_code(q,code):
 # Here the main program - Adapt the work directory to your environment
 
 os.chdir(str(Path.home())+"/Documents/NUVA")
-# get_nuva(get_nuva_version())
-# split_nuva()
-# refturtle_to_map("CVX")
-# shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
-# map_to_turtle("CVX")
+get_nuva(get_nuva_version())
+split_nuva()
+refturtle_to_map("CVX")
+shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
+map_to_turtle("CVX")
 
 q1 = """ 
    # All vaccines against smallpox
@@ -174,9 +174,9 @@ q1 = """
     ?val nuvs:prevents ?dis 
  }
 """
-#res = query_core(q1)
-#for row in res:
-#    print (str(row[0])+"-"+str(row[1]))
+res = query_core(q1)
+for row in res:
+    print (str(row[0])+"-"+str(row[1]))
 
 q2="""
     # List CVX Codes
@@ -189,7 +189,7 @@ q2="""
     ?vac rdfs:label $lvac
     }
 """
-res=query_code(q2,"CVX")
-for row in res:
-    print ("CVX "+str(row[0])+" = "+str(row[1])+" : "+str(row[2]))
+#res=query_code(q2,"CVX")
+#for row in res:
+#    print ("CVX "+str(row[0])+" = "+str(row[1])+" : "+str(row[2]))
  
