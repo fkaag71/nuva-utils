@@ -176,7 +176,7 @@ q1 = """
 """
 res = query_core(q1)
 for row in res:
-    print (str(row[0])+"-"+str(row[1]))
+    print (f"{row.vcode} - {row.vl}")
 
 q2="""
     # List CVX Codes
@@ -189,7 +189,7 @@ q2="""
     ?vac rdfs:label $lvac
     }
 """
-#res=query_code(q2,"CVX")
-#for row in res:
-#    print ("CVX "+str(row[0])+" = "+str(row[1])+" : "+str(row[2]))
+res=query_code(q2,"CVX")
+for row in res:
+    print (f"CVX {row.cvx} = {row.nuva} - {row.lvac}")
  
