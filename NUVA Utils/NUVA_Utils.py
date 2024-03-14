@@ -8,7 +8,8 @@ import shutil
 
 BaseURI="http://ivci.org/NUVA#"
 full_fname="nuva_ivci.rdf"
-core_fname = "nuva_core.ttl"
+core_fname ="nuva_core.ttl"
+
 
 def get_nuva_version():
     url="https://ans.mesvaccins.net/last_version.json"
@@ -29,7 +30,7 @@ def get_nuva(version):
   f2.close()
 
 def split_nuva():
-    g = Graph()
+    g = Graph(store="Oxigraph")
     g.parse(full_fname)
 
     CodesParent=URIRef(BaseURI+"Code")
@@ -39,9 +40,9 @@ def split_nuva():
     Codes = g.subjects(RDFS.subClassOf,CodesParent)
     for Code in Codes:
         label=g.value(Code,RDFS.label)
-        graph_codes[label] = Graph()
+        graph_codes[label] = Graph(store="Oxigraph")
 
-    g_core= Graph()
+    g_core= Graph(store="Oxigraph")
 
     for s,p,o in g:
 
@@ -50,7 +51,7 @@ def split_nuva():
             lang = o.language
             if (lang!="en" and lang!=None): 
                 if (not lang in graph_langs.keys()):
-                    graph_langs[lang] = Graph();
+                    graph_langs[lang] = Graph(store="Oxigraph");
                 graph_langs[lang].add((s,p,o))
                 continue
 
@@ -92,8 +93,8 @@ def split_nuva():
 def refturtle_to_map(code):
     ttl_fname = "nuva_refcode_"+code+".ttl"
     csv_fname = "nuva_refcode_"+code+".csv"
-    g = Graph()
-    g_core = Graph()
+    g = Graph(store="Oxigraph")
+    g_core = Graph(store="Oxigraph")
 
     g_core.parse(core_fname)
     g.parse(ttl_fname)
@@ -111,8 +112,8 @@ def map_to_turtle(code):
         core_fname = "nuva_core.ttl"
         ttl_fname = "nuva_code_"+code+".ttl"
         csv_fname = "nuva_code_"+code+".csv"
-        g = Graph()
-        g_core=Graph()
+        g = Graph(store="Oxigraph")
+        g_core=Graph(store="Oxigraph")
         g_core.parse (core_fname)
 
         codeParent=URIRef(BaseURI+code)
@@ -142,27 +143,166 @@ def map_to_turtle(code):
         g.serialize(destination=ttl_fname)
 
 def query_core(q):
-    g_core = Graph()
+    print ("Loading core graph")
+    g_core = Graph(store="Oxigraph")
     g_core.parse(core_fname)
+    print ("Running query")
     return g_core.query(q)
 
 def query_code(q,code):
-    g = Graph()
+    print ("Loading core graph")
+    g = Graph(store="Oxigraph")
     g.parse(core_fname)
+    print ("Loading code graph")
+    print ("nuva_code_"+code+".ttl")
     g.parse("nuva_code_"+code+".ttl")
+    print ("Running query")
     return g.query(q)
+
+def lang_table(l1,l2):
+    fname1 = "nuva_lang_"+l1+".ttl"
+    fname2 = "nuva_lang_"+l2+".ttl"
+    csv_fname = "nuva_lang_"+l1+"_"+l2+".csv"
+
+    g1= Graph(store="Oxigraph")
+    g1.parse (fname1)
+    g2 = Graph(store="Oxigraph")
+    g2.parse (fname2)
+
+    csv_file = open(csv_fname,'w',encoding="utf-8",newline='')
+    writer = csv.writer(csv_file, delimiter=';')
+    writer.writerow([l1,l2])
+
+    for (s,p,o1) in g1:
+        o2 = g2.value(s,p,None)
+        writer.writerow([o1,o2])
+            
+def eval_code(code):
+    rev_fname = "nuva_reverse_"+code+".csv"
+    best_fname="nuva_best_"+code+"..csv"
+
+    print ("Loading core graph")
+    g = Graph(store="Oxigraph")
+    g.parse(core_fname)
+    print ("Loading code graph")
+    g.parse("nuva_code_"+code+".ttl")
+
+    print ("Retrieve the list of NUVA codes")
+    q1="""
+    SELECT ?vacnot ?label WHERE {
+      ?vac rdfs:subClassOf nuva:Vaccine .
+      ?vac skos:notation ?vacnot .
+      ?vac rdfs:label ?label filter(lang(?label)='en'||lang(?label)='')
+    }
+    """
+    res1 = g.query(q1)
+    
+    bestcodes = {}
+
+    for row in res1:
+        bestcodes[str(row.vacnot)] = {'label':str(row.label),'count':10000,'code':"None"}
+        
+    nbnuva = len(bestcodes)
+
+    print ("Retrieve the NUVA codes corresponding to concrete external codes")
+    q2="""
+   SELECT ?extnot ?rlabel ?rnot WHERE { 
+   ?extcode rdfs:subClassOf nuva:"""+code+""" .
+   ?extcode skos:notation ?extnot .
+   ?rvac rdfs:subClassOf nuva:Vaccine . 
+   ?rvac skos:exactMatch ?extcode .
+   ?rvac rdfs:label ?rlabel .
+   ?rvac nuvs:isAbstract false .
+   ?rvac skos:notation ?rnot
+   } 
+   """
+    res2 = g.query(q2)
+
+    rev_file = open(rev_fname,'w',encoding="utf-8",newline='')
+    rev_writer = csv.writer(rev_file, delimiter=';')
+    rev_writer.writerow([code,"Label","Count","NUVA codes"])
+    for row in res2:
+         rev_writer.writerow([row.extnot,row.rlabel,1,row.rnot])
+         bestcodes[str(row.rnot)]['count']=1
+         bestcodes[str(row.rnot)]['code']=row.extnot
+
+    print("Retrieve all NUVA codes matching abstract external codes")    
+    q3="""
+   SELECT ?extnot ?rlabel (count(?codevac) as ?nvac) (GROUP_CONCAT(?vacnot) as ?lvac) WHERE { 
+   ?extcode rdfs:subClassOf nuva:"""+code+""" .
+   ?extcode skos:notation ?extnot .
+   ?rvac rdfs:subClassOf nuva:Vaccine . 
+   ?rvac skos:exactMatch ?extcode .
+   ?rvac rdfs:label ?rlabel .
+   ?rvac nuvs:isAbstract true .
+   ?vac rdfs:subClassOf nuva:Vaccine .
+   ?vac skos:notation ?vacnot
+    FILTER NOT EXISTS {
+    # Le vaccin externe ?rvac ne comporte pas de valence non incluse dans le candidat ?vac
+    # On prend toutes les valences ?rval du vaccin externe
+   # Et on ne garde que celles pour lesquelles il n'existe pas de valence fille dans le candidat
+   # Si la liste n'est pas vide, le candidat est éliminé
+        ?rvac nuvs:containsValence ?rval .
+        FILTER NOT EXISTS {
+            ?vac nuvs:containsValence ?val .
+            ?val rdfs:subClassOf* ?rval
+        }
+    } .
+ FILTER NOT EXISTS {
+ # Le candidat ne comporte pas de valence non incluse dans le vaccin CVX
+ # On prend toutes les valences du candidat
+ # Et on ne garde que celles pour lesquelles il n'y a pas de valence parente dans le vaccin CVX
+ # Si la liste n'est pas vide, le candidat est éliminé
+       ?vac nuvs:containsValence ?val .
+        FILTER  NOT EXISTS {
+            ?rvac nuvs:containsValence ?rval .
+            ?val rdfs:subClassOf* ?rval
+        }        
+    }
+ } GROUP BY ?extnot ?rlabel
+   """
+    res3=g.query(q3)
+
+    for row in res3:
+         rev_writer.writerow([row.extnot,row.rlabel,row.nvac,row.lvac])
+         nuva_codes=row.lvac.split()
+         rcount = len(nuva_codes)
+     
+         for nuva_code in nuva_codes:
+            if bestcodes[nuva_code]['count'] >= rcount:
+                bestcodes[nuva_code]['count'] = rcount
+                bestcodes[nuva_code]['code']=row.extnot
+    
+    rev_file.close     
+    
+    print ("Create best codes report "+best_fname)
+    best_file = open(best_fname,'w',encoding="utf-8",newline='')
+    best_writer = csv.writer(best_file, delimiter=';')
+    best_writer.writerow(["NUVA","Label","Best "+code,"Count"])
+    unmapped = 0
+    totalcount = 0
+    for nuvacode in bestcodes:
+        best_writer.writerow([nuvacode,bestcodes[nuvacode]['label'],":"+str(bestcodes[nuvacode]['code']),bestcodes[nuvacode]['count']])
+        if bestcodes[nuvacode]['code'] == "None" :
+            unmapped +=1
+        else:
+            totalcount = totalcount + bestcodes[nuvacode]['count']
+
+    best_file.close
+    print ("Completeness {:.2%} ".format((nbnuva-unmapped)/nbnuva))
+    print ("Precision {:.2%} ".format((nbnuva-unmapped)/totalcount))
 
 
 # Here the main program - Adapt the work directory to your environment
 
 os.chdir(str(Path.home())+"/Documents/NUVA")
-get_nuva(get_nuva_version())
-split_nuva()
-refturtle_to_map("CVX")
-shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
-map_to_turtle("CVX")
+#get_nuva(get_nuva_version())
+#split_nuva()
+#refturtle_to_map("CVX")
+#shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
+#map_to_turtle("CVX")
 
-q1 = """ 
+q = """ 
    # All vaccines against smallpox
     SELECT ?vcode ?vl WHERE { 
     ?dis rdfs:subClassOf nuva:Disease .
@@ -174,22 +314,17 @@ q1 = """
     ?val nuvs:prevents ?dis 
  }
 """
-res = query_core(q1)
-for row in res:
-    print (f"{row.vcode} - {row.vl}")
+#res = query_core(q)
+#for row in res:
+#     print (f"{row.vcode} - {row.vl}")
 
-q2="""
-    # List CVX Codes
-    SELECT ?cvx ?nuva ?lvac WHERE { 
-    ?vac rdfs:subClassOf nuva:Vaccine . 
-    ?vac skos:notation ?nuva .
-    ?vac skos:exactMatch ?code .
-    ?code rdfs:subClassOf nuva:CVX .
-    ?code skos:notation ?cvx .
-    ?vac rdfs:label $lvac
-    }
-"""
-res=query_code(q2,"CVX")
-for row in res:
-    print (f"CVX {row.cvx} = {row.nuva} - {row.lvac}")
+# eval_code("ATC")
+eval_code("CVX")
+# eval_code("SNOMED-CT")
+#eval_code("CIS")
+
+
+
+# lang_table("fr","de")
+
  
