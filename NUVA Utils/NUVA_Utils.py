@@ -204,7 +204,7 @@ def eval_code(code):
         
     nbnuva = len(bestcodes)
 
-    print ("Retrieve the NUVA codes corresponding to concrete external codes")
+    print ("Retrieve all exact matches")
     q2="""
    SELECT ?extnot ?rlabel ?rnot WHERE { 
    ?extcode rdfs:subClassOf nuva:"""+code+""" .
@@ -212,7 +212,6 @@ def eval_code(code):
    ?rvac rdfs:subClassOf nuva:Vaccine . 
    ?rvac skos:exactMatch ?extcode .
    ?rvac rdfs:label ?rlabel .
-   ?rvac nuvs:isAbstract false .
    ?rvac skos:notation ?rnot
    } 
    """
@@ -226,7 +225,7 @@ def eval_code(code):
          bestcodes[str(row.rnot)]['count']=1
          bestcodes[str(row.rnot)]['code']=row.extnot
 
-    print("Retrieve all NUVA codes matching abstract external codes")    
+    print("Retrieve all NUVA codes matching external codes")    
     q3="""
    SELECT ?extnot ?rlabel (count(?codevac) as ?nvac) (GROUP_CONCAT(?vacnot) as ?lvac) WHERE { 
    ?extcode rdfs:subClassOf nuva:"""+code+""" .
@@ -238,10 +237,10 @@ def eval_code(code):
    ?vac rdfs:subClassOf nuva:Vaccine .
    ?vac skos:notation ?vacnot
     FILTER NOT EXISTS {
-    # Le vaccin externe ?rvac ne comporte pas de valence non incluse dans le candidat ?vac
-    # On prend toutes les valences ?rval du vaccin externe
-   # Et on ne garde que celles pour lesquelles il n'existe pas de valence fille dans le candidat
-   # Si la liste n'est pas vide, le candidat est éliminé
+    # The reference vaccine ?rvac for the external code does not have any valence not within the ?vac candidate
+    # Considering all valences within ?rvac
+   # Keep the ones that do not have a child in the candidate ?vac
+   # If the list is not empty, the candidate is discarded
         ?rvac nuvs:containsValence ?rval .
         FILTER NOT EXISTS {
             ?vac nuvs:containsValence ?val .
@@ -249,10 +248,10 @@ def eval_code(code):
         }
     } .
  FILTER NOT EXISTS {
- # Le candidat ne comporte pas de valence non incluse dans le vaccin CVX
- # On prend toutes les valences du candidat
- # Et on ne garde que celles pour lesquelles il n'y a pas de valence parente dans le vaccin CVX
- # Si la liste n'est pas vide, le candidat est éliminé
+ # The ?vac candidate does not have any valence not present in the reference vaccine ?rvac
+ # Considering all valences of the candidate ?vac
+ # We keep the ones that do not have a parent in the reference ?rvac
+ # If the list is not empty, the candidate is discarded
        ?vac nuvs:containsValence ?val .
         FILTER  NOT EXISTS {
             ?rvac nuvs:containsValence ?rval .
@@ -289,15 +288,15 @@ def eval_code(code):
             totalcount = totalcount + bestcodes[nuvacode]['count']
 
     best_file.close
-    print ("Completeness {:.2%} ".format((nbnuva-unmapped)/nbnuva))
-    print ("Precision {:.2%} ".format((nbnuva-unmapped)/totalcount))
-
+    
+    return ({'Completeness': (nbnuva-unmapped)/nbnuva , 'Precision': (nbnuva-unmapped)/totalcount })
 
 # Here the main program - Adapt the work directory to your environment
 
 os.chdir(str(Path.home())+"/Documents/NUVA")
 #get_nuva(get_nuva_version())
 #split_nuva()
+#lang_table("fr","de")
 #refturtle_to_map("CVX")
 #shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
 #map_to_turtle("CVX")
@@ -318,13 +317,10 @@ q = """
 #for row in res:
 #     print (f"{row.vcode} - {row.vl}")
 
-# eval_code("ATC")
-eval_code("CVX")
-# eval_code("SNOMED-CT")
-#eval_code("CIS")
+res = eval_code("CVX")
+print ("Completeness {:.1%} ".format(res['Completeness']))
+print ("Precision {:.1%} ".format(res['Precision']))
 
 
-
-# lang_table("fr","de")
 
  
