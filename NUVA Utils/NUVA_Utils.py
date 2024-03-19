@@ -18,6 +18,7 @@ def get_nuva_version():
     return (data_json['version'])
 
 def get_nuva(version):
+  print ("Retrieving NUVA version "+version)
   fname1 = "nuva_ans.rdf";
   urlretrieve("https://ans.mesvaccins.net/versions/"+version+"/nuva.rdf",fname1)
 
@@ -30,20 +31,23 @@ def get_nuva(version):
   f2.close()
 
 def split_nuva():
-    g = Graph(store="Oxigraph")
+    print ("Loading graph to split")
+    g = Graph()
     g.parse(full_fname)
 
     CodesParent=URIRef(BaseURI+"Code")
     graph_codes = {}
     graph_langs = {}
 
+    print("Initializing subgraphs for code systems")
     Codes = g.subjects(RDFS.subClassOf,CodesParent)
     for Code in Codes:
         label=g.value(Code,RDFS.label)
         graph_codes[label] = Graph(store="Oxigraph")
 
+    print("Initializing core graph")    
     g_core= Graph(store="Oxigraph")
-
+    
     for s,p,o in g:
 
         # Extract languages
@@ -294,12 +298,12 @@ def eval_code(code):
 # Here the main program - Adapt the work directory to your environment
 
 os.chdir(str(Path.home())+"/Documents/NUVA")
-#get_nuva(get_nuva_version())
-#split_nuva()
+get_nuva(get_nuva_version())
+split_nuva()
 #lang_table("fr","de")
-#refturtle_to_map("CVX")
-#shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
-#map_to_turtle("CVX")
+refturtle_to_map("CVX")
+shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
+map_to_turtle("CVX")
 
 q = """ 
    # All vaccines against smallpox
