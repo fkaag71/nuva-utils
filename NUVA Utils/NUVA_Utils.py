@@ -210,13 +210,14 @@ def eval_code(code):
 
     print ("Retrieve all exact matches")
     q2="""
-   SELECT ?extnot ?rlabel ?rnot WHERE { 
+   SELECT ?extnot ?abstract ?rlabel ?rnot WHERE { 
    ?extcode rdfs:subClassOf nuva:"""+code+""" .
    ?extcode skos:notation ?extnot .
    ?rvac rdfs:subClassOf nuva:Vaccine . 
    ?rvac skos:exactMatch ?extcode .
    ?rvac rdfs:label ?rlabel .
-   ?rvac skos:notation ?rnot
+   ?rvac skos:notation ?rnot .
+   ?rvac nuvs:isAbstract ?abstract
    } 
    """
     res2 = g.query(q2)
@@ -225,7 +226,7 @@ def eval_code(code):
     rev_writer = csv.writer(rev_file, delimiter=';')
     rev_writer.writerow([code,"Label","Count","NUVA codes"])
     for row in res2:
-         rev_writer.writerow([row.extnot,row.rlabel,1,row.rnot])
+         if (not row.abstract): rev_writer.writerow([row.extnot,row.rlabel,1,row.rnot])
          bestcodes[str(row.rnot)]['count']=1
          bestcodes[str(row.rnot)]['code']=row.extnot
 
