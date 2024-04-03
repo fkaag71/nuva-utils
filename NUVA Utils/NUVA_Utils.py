@@ -5,6 +5,7 @@ import csv
 import json
 import os
 import shutil
+import math
 
 BaseURI="http://ivci.org/NUVA#"
 full_fname="nuva_ivci.rdf"
@@ -294,7 +295,7 @@ def eval_code(code):
 
     best_file.close
     
-    return ({'Completeness': (nbnuva-unmapped)/nbnuva , 'Precision': (nbnuva-unmapped)/totalcount })
+    return ({'Completeness': (nbnuva-unmapped)/nbnuva , 'Precision': math.sqrt((nbnuva-unmapped)/totalcount) })
 
 # Here the main program - Adapt the work directory to your environment
 
