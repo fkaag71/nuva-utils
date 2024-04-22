@@ -210,31 +210,12 @@ def eval_code(code):
     revcodes = {}
 
     for row in res1:
-        bestcodes[str(row.vacnot)] = {'label':str(row.label),'count':10000,'code':"None"}
+        bestcodes[str(row.vacnot)] = {'label':str(row.label),'cardinality':10000,'codes':[]}
         
     nbnuva = len(bestcodes)
 
-    print ("Retrieve NUVA codes for specific external codes")
+    print("Retrieve NUVA codes matching external codes")    
     q2="""
-   SELECT ?extnot ?rlabel ?rnot WHERE { 
-   ?extcode rdfs:subClassOf nuva:"""+code+""" .
-   ?extcode skos:notation ?extnot .
-   ?rvac rdfs:subClassOf nuva:Vaccine . 
-   ?rvac skos:exactMatch ?extcode .
-   ?rvac rdfs:label ?rlabel .
-   ?rvac skos:notation ?rnot .
-   ?rvac nuvs:isAbstract false
-   } 
-   """
-    res2 = g.query(q2)
-
-    for row in res2:
-         revcodes[str(row.extnot)]= {"label" : row.rlabel, "cardinality" : 1, "may": row.rnot, "best": row.rnot}
-         bestcodes[str(row.rnot)]['count']=1
-         bestcodes[str(row.rnot)]['code']=row.extnot
-
-    print("Retrieve NUVA codes matching abstract external codes")    
-    q3="""
    SELECT ?extnot ?rlabel ?rnot (count(?codevac) as ?nvac) (GROUP_CONCAT(?vacnot) as ?lvac) WHERE { 
    ?extcode rdfs:subClassOf nuva:"""+code+""" .
    ?extcode skos:notation ?extnot .
@@ -242,7 +223,6 @@ def eval_code(code):
    ?rvac skos:exactMatch ?extcode .
    ?rvac skos:notation ?rnot .
    ?rvac rdfs:label ?rlabel .
-   ?rvac nuvs:isAbstract true .
    ?vac rdfs:subClassOf nuva:Vaccine .
    ?vac skos:notation ?vacnot
     FILTER NOT EXISTS {
@@ -265,58 +245,64 @@ def eval_code(code):
         FILTER  NOT EXISTS {
             ?rvac nuvs:containsValence ?rval .
             ?val rdfs:subClassOf* ?rval
-        }        
+        }
     }
  } GROUP BY ?extnot ?rlabel ?rnot
    """
-    res3=g.query(q3)
+    res3=g.query(q2)
 
     for row in res3:
-         revcodes[str(row.extnot)]= {"label" : row.rlabel, "cardinality" :row.nvac.value, "may": row.lvac, "best": row.rnot}
-         nuva_codes=row.lvac.split()
-         rcount = len(nuva_codes)
+        extnot = code+"-"+str(row.extnot)
+        rnot = str(row.rnot)
+        nuva_codes=row.lvac.split()
+        rcard = len(nuva_codes)
+        
+        revcodes[extnot]= {"label" : str(row.rlabel), "cardinality" : rcard, "may": [], "blur":0, "best": []}
 
-         # This one for the exact match
-         bestcodes[str(row.rnot)]['count']=1
-         bestcodes[str(row.rnot)]['code']=row.extnot
+        for nuva_code in nuva_codes:
+            revcodes[extnot]['may'].append(nuva_code)
+            if (bestcodes[nuva_code]['cardinality'] == rcard):
+                bestcodes[nuva_code]['codes'].append(extnot)
+                continue
+            if (bestcodes[nuva_code]['cardinality'] > rcard):
+                bestcodes[nuva_code]['cardinality'] = rcard
+                bestcodes[nuva_code]['codes']=[extnot]
 
-         # And then the candidates
-         if rcount >1:
-            for nuva_code in nuva_codes:
-                if bestcodes[nuva_code]['count'] >= rcount:
-                    bestcodes[nuva_code]['count'] = rcount
-                    bestcodes[nuva_code]['code']=row.extnot
-                    revcodes[str(row.extnot)]['best'] += " "+nuva_code
+    print ("Create best codes report "+best_fname)
+    best_file = open(best_fname,'w',encoding="utf-8",newline='')
+    best_writer = csv.writer(best_file, delimiter=';')
+    best_writer.writerow(["NUVA","Label","Cardinality","Best "+code])
+    unmapped = 0
+    totalcount = 0
+    for nuva_code in bestcodes:
+        best_writer.writerow([nuva_code,bestcodes[nuva_code]['label'],bestcodes[nuva_code]['cardinality'], bestcodes[nuva_code]['codes']])
+        if bestcodes[nuva_code]['cardinality'] ==  10000 :  unmapped +=1
+        else:
+            for extcode in bestcodes[nuva_code]['codes']:
+                revcodes[extcode]['blur'] +=1
+                revcodes[extcode]['best'].append(nuva_code)
+    best_file.close
 
     print ("Create reverse codes report "+rev_fname)
     rev_file = open(rev_fname,'w',encoding="utf-8",newline='')
     rev_writer = csv.writer(rev_file, delimiter=';')
-    rev_writer.writerow([code,"Label","Cardinality","May code", "Best code for"])
+    rev_writer.writerow([code,"Label","Cardinality","May code", "Blur", "Best code for"])
 
-    totalcardinality = 0
+    totalblur = 0
     for extcode in revcodes:
-        rev_writer.writerow([code+"-"+extcode,revcodes[extcode]['label'], revcodes[extcode]['cardinality'],
-                             revcodes[extcode]['may'], revcodes[extcode]['best']])
-        if revcodes[extcode]['best'] != "": 
-            totalcardinality += revcodes[extcode]['cardinality']
+        rev_writer.writerow([extcode,revcodes[extcode]['label'], 
+                             revcodes[extcode]['cardinality'],revcodes[extcode]['may'], 
+                             revcodes[extcode]['blur'], revcodes[extcode]['best']])
+        totalblur += revcodes[extcode]['blur']
     rev_file.close
 
     # All aligned codes, abstract or not, are now in rev_codes
     nbcodes = len(revcodes)
 
-    print ("Create best codes report "+best_fname)
-    best_file = open(best_fname,'w',encoding="utf-8",newline='')
-    best_writer = csv.writer(best_file, delimiter=';')
-    best_writer.writerow(["NUVA","Label","Best "+code,"Count"])
-    unmapped = 0
-    totalcount = 0
-    for nuvacode in bestcodes:
-        best_writer.writerow([nuvacode,bestcodes[nuvacode]['label'],code+"-"+str(bestcodes[nuvacode]['code']),bestcodes[nuvacode]['count']])
-        if bestcodes[nuvacode]['code'] == "None" :  unmapped +=1
-    best_file.close
+
 
     completeness = (nbnuva-unmapped)/nbnuva
-    precision = nbcodes/totalcardinality
+    precision = nbcodes/totalblur
 
     print ("Create metrics report "+metrics_fname)
     metrics_file = open(metrics_fname,'w',encoding="utf-8",newline='')
@@ -325,17 +311,17 @@ def eval_code(code):
     print (f"Number of unmapped concepts: {unmapped}",file=metrics_file)
     print ("Completeness: {:.1%}\n".format(completeness),file=metrics_file)
     print (f"Number of aligned codes: {nbcodes}",file=metrics_file)
-    print ("Average cardinality of aligned codes {:.1f}".format(1/precision),file=metrics_file)
+    print ("Average blur of aligned codes {:.1f}".format(1/precision),file=metrics_file)
     print ("Precision: {:.1%}".format(precision),file=metrics_file)
     metrics_file.close()
 
 # Here the main program - Adapt the work directory to your environment
 
 os.chdir(str(Path.home())+"/Documents/NUVA")
-get_nuva(get_nuva_version())
-split_nuva()
-refturtle_to_map("CVX")
-shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
-map_to_turtle("CVX")
+#get_nuva(get_nuva_version())
+#split_nuva()
+#refturtle_to_map("CVX")
+#shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
+#map_to_turtle("CVX")
 eval_code("CVX")
 
