@@ -202,7 +202,7 @@ def eval_code(code):
       ?vac rdfs:subClassOf nuva:Vaccine .
       ?vac skos:notation ?vacnot .
       ?vac rdfs:label ?label filter(lang(?label)='en'||lang(?label)='')
-    }
+    } ORDER BY ?vacnot
     """
     res1 = g.query(q1)
     
@@ -214,8 +214,30 @@ def eval_code(code):
         
     nbnuva = len(bestcodes)
 
-    print("Retrieve NUVA codes matching external codes")    
+    print("Retrieve NUVA codes matching specific external codes")    
     q2="""
+   SELECT ?extnot ?rlabel ?rnot WHERE { 
+   ?extcode rdfs:subClassOf nuva:"""+code+""" .
+   ?extcode skos:notation ?extnot .
+   ?rvac rdfs:subClassOf nuva:Vaccine . 
+   ?rvac rdfs:label ?rlabel .
+   ?rvac skos:exactMatch ?extcode .
+   ?rvac skos:notation ?rnot .
+   ?rvac nuvs:isAbstract false .
+   } 
+   """
+    res2 = g.query(q2)
+    for row in res2:
+        extnot = code+"-"+str(row.extnot)
+        nuva_code = str(row.rnot)
+                       
+        revcodes[extnot]= {"label" : str(row.rlabel), "cardinality" : 1, "may": [nuva_code], "blur":0, "best": []}
+
+        bestcodes[nuva_code]['cardinality'] = 1
+        bestcodes[nuva_code]['codes'].append(extnot)
+
+    print("Retrieve NUVA codes matching abstract external codes")    
+    q3="""
    SELECT ?extnot ?rlabel ?rnot (count(?codevac) as ?nvac) (GROUP_CONCAT(?vacnot) as ?lvac) WHERE { 
    ?extcode rdfs:subClassOf nuva:"""+code+""" .
    ?extcode skos:notation ?extnot .
@@ -223,6 +245,7 @@ def eval_code(code):
    ?rvac skos:exactMatch ?extcode .
    ?rvac skos:notation ?rnot .
    ?rvac rdfs:label ?rlabel .
+   ?rvac nuvs:isAbstract true .
    ?vac rdfs:subClassOf nuva:Vaccine .
    ?vac skos:notation ?vacnot
     FILTER NOT EXISTS {
@@ -247,16 +270,17 @@ def eval_code(code):
             ?val rdfs:subClassOf* ?rval
         }
     }
- } GROUP BY ?extnot ?rlabel ?rnot
+ } GROUP BY ?extnot ?rlabel ?rnot ?abstract
    """
-    res3=g.query(q2)
+    res3=g.query(q3)
 
     for row in res3:
         extnot = code+"-"+str(row.extnot)
         rnot = str(row.rnot)
-        nuva_codes=row.lvac.split()
-        rcard = len(nuva_codes)
         
+        nuva_codes=row.lvac.split()
+         
+        rcard = len(nuva_codes)                  
         revcodes[extnot]= {"label" : str(row.rlabel), "cardinality" : rcard, "may": [], "blur":0, "best": []}
 
         for nuva_code in nuva_codes:
@@ -267,6 +291,7 @@ def eval_code(code):
             if (bestcodes[nuva_code]['cardinality'] > rcard):
                 bestcodes[nuva_code]['cardinality'] = rcard
                 bestcodes[nuva_code]['codes']=[extnot]
+
 
     print ("Create best codes report "+best_fname)
     best_file = open(best_fname,'w',encoding="utf-8",newline='')
@@ -318,10 +343,14 @@ def eval_code(code):
 # Here the main program - Adapt the work directory to your environment
 
 os.chdir(str(Path.home())+"/Documents/NUVA")
-#get_nuva(get_nuva_version())
-#split_nuva()
+get_nuva(get_nuva_version())
+split_nuva()
 #refturtle_to_map("CVX")
 #shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
 #map_to_turtle("CVX")
 eval_code("CVX")
+#eval_code("ATC")
+#eval_code("CIS")
+#eval_code("CVC")
+#eval_code("SNOMED-CT")
 
