@@ -182,10 +182,14 @@ def lang_table(l1,l2):
         o2 = g2.value(s,p,None)
         writer.writerow([o1,o2])
             
-def eval_code(code):
-    rev_fname = "nuva_reverse_"+code+".csv"
-    best_fname="nuva_best_"+code+".csv"
-    metrics_fname = "nuva_metrics_"+code+".txt"
+def eval_code(code,fullset):
+    if fullset:
+        suffix="_full"
+    else:
+        suffix="_gen"
+    rev_fname = "nuva_reverse_"+code+suffix+".csv"
+    best_fname="nuva_best_"+code+suffix+".csv"
+    metrics_fname = "nuva_metrics_"+code+suffix+".txt"
     ref_fname="nuva_refcode_"+code+".ttl"
     work_fname = "nuva_code_"+code+".ttl"
 
@@ -198,10 +202,17 @@ def eval_code(code):
 
     print ("Retrieve the list of NUVA codes")
     q1="""
-    SELECT ?vacnot ?label WHERE {
+    SELECT ?vacnot ?label ?abstract WHERE {
       ?vac rdfs:subClassOf nuva:Vaccine .
       ?vac skos:notation ?vacnot .
-      ?vac rdfs:label ?label filter(lang(?label)='en'||lang(?label)='')
+      ?vac rdfs:label ?label filter(lang(?label)='en'||lang(?label)='') .
+      ?vac nuvs:isAbstract ?abstract .
+      """
+    if not fullset:
+      q1 += """
+      ?vac nuvs:isAbstract true
+      """                
+    q1 += """        
     } ORDER BY ?vacnot
     """
     res1 = g.query(q1)
@@ -210,31 +221,32 @@ def eval_code(code):
     revcodes = {}
 
     for row in res1:
-        bestcodes[str(row.vacnot)] = {'label':str(row.label),'cardinality':10000,'codes':[]}
+        bestcodes[str(row.vacnot)] = {'label':str(row.label),'cardinality':10000,'isAbstract':str(row.abstract), 'codes':[]}
         
     nbnuva = len(bestcodes)
 
-    print("Retrieve NUVA codes matching specific external codes")    
-    q2="""
-   SELECT ?extnot ?rlabel ?rnot WHERE { 
-   ?extcode rdfs:subClassOf nuva:"""+code+""" .
-   ?extcode skos:notation ?extnot .
-   ?rvac rdfs:subClassOf nuva:Vaccine . 
-   ?rvac rdfs:label ?rlabel .
-   ?rvac skos:exactMatch ?extcode .
-   ?rvac skos:notation ?rnot .
-   ?rvac nuvs:isAbstract false .
-   } 
-   """
-    res2 = g.query(q2)
-    for row in res2:
-        extnot = code+"-"+str(row.extnot)
-        nuva_code = str(row.rnot)
+    if fullset:
+        print("Retrieve NUVA codes matching specific external codes")    
+        q2="""
+       SELECT ?extnot ?rlabel ?rnot WHERE { 
+       ?extcode rdfs:subClassOf nuva:"""+code+""" .
+       ?extcode skos:notation ?extnot .
+       ?rvac rdfs:subClassOf nuva:Vaccine . 
+       ?rvac rdfs:label ?rlabel .
+       ?rvac skos:exactMatch ?extcode .
+       ?rvac skos:notation ?rnot .
+       ?rvac nuvs:isAbstract false .
+       } 
+       """
+        res2 = g.query(q2)
+        for row in res2:
+            extnot = code+"-"+str(row.extnot)
+            nuva_code = str(row.rnot)
                        
-        revcodes[extnot]= {"label" : str(row.rlabel), "cardinality" : 1, "may": [nuva_code], "blur":0, "best": []}
+            revcodes[extnot]= {"label" : str(row.rlabel), "cardinality" : 1, "may": [nuva_code], "blur":0, "best": []}
 
-        bestcodes[nuva_code]['cardinality'] = 1
-        bestcodes[nuva_code]['codes'].append(extnot)
+            bestcodes[nuva_code]['cardinality'] = 1
+            bestcodes[nuva_code]['codes'].append(extnot)
 
     print("Retrieve NUVA codes matching abstract external codes")    
     q3="""
@@ -247,6 +259,11 @@ def eval_code(code):
    ?rvac rdfs:label ?rlabel .
    ?rvac nuvs:isAbstract true .
    ?vac rdfs:subClassOf nuva:Vaccine .
+   """
+    if not fullset:
+       q3+= """?vac nuvs:isAbstract true .
+       """
+    q3+= """
    ?vac skos:notation ?vacnot
     FILTER NOT EXISTS {
     # The reference vaccine ?rvac for the external code does not have any valence not within the ?vac candidate
@@ -296,11 +313,12 @@ def eval_code(code):
     print ("Create best codes report "+best_fname)
     best_file = open(best_fname,'w',encoding="utf-8",newline='')
     best_writer = csv.writer(best_file, delimiter=';')
-    best_writer.writerow(["NUVA","Label","Cardinality","Best "+code])
+    best_writer.writerow(["NUVA","Label","IsAbstract", "Cardinality","Best "+code])
     unmapped = 0
     totalcount = 0
     for nuva_code in bestcodes:
-        best_writer.writerow([nuva_code,bestcodes[nuva_code]['label'],bestcodes[nuva_code]['cardinality'], bestcodes[nuva_code]['codes']])
+        best_writer.writerow([nuva_code,bestcodes[nuva_code]['label'],bestcodes[nuva_code]['isAbstract'],
+                              bestcodes[nuva_code]['cardinality'], bestcodes[nuva_code]['codes']])
         if bestcodes[nuva_code]['cardinality'] ==  10000 :  unmapped +=1
         else:
             for extcode in bestcodes[nuva_code]['codes']:
@@ -348,9 +366,10 @@ split_nuva()
 #refturtle_to_map("CVX")
 #shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
 #map_to_turtle("CVX")
-eval_code("CVX")
-#eval_code("ATC")
-#eval_code("CIS")
-#eval_code("CVC")
-#eval_code("SNOMED-CT")
+eval_code("CVX",False) # Assess CVX against generic NUVA codes
+eval_code("CVX",True)  # Assess CVX against all NUVA codes
+#eval_code("ATC",False)
+#eval_code("CIS",True)
+#eval_code("CVC", False)
+#eval_code("SNOMED-CT", True)
 
