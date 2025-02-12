@@ -7,7 +7,7 @@ import os
 import shutil
 import math
 
-BaseURI="http://ivci.org/NUVA#"
+BaseURI="http://ivci.org/NUVA/"
 full_fname="nuva_ivci.rdf"
 core_fname ="nuva_core.ttl"
 
@@ -27,7 +27,8 @@ def get_nuva(version):
   f1= open(fname1,'r',encoding="utf-8")
   f2= open(full_fname,'w',encoding="utf-8")
   for line in f1:
-      f2.write(line.replace("http://data.esante.gouv.fr/NUVA","http://ivci.org/NUVA"))
+      relocated = line.replace("data.esante.gouv.fr","ivci.org")
+      f2.write(relocated.replace("NUVA#","NUVA/"))
   f1.close()
   f2.close()
 
@@ -78,7 +79,7 @@ def split_nuva():
         g_core.add((s,p,o))
 
     NUVS = Namespace("http://ivci.org/NUVA/nuvs#")
-    NUVA = Namespace("http://ivci.org/NUVA#") 
+    NUVA = Namespace("http://ivci.org/NUVA/") 
     g_core.bind("nuvs",NUVS)
     g_core.bind("nuva",NUVA)
 
@@ -110,7 +111,7 @@ def refturtle_to_map(code):
 
     for s,p,o in g.triples((None,SKOS.exactMatch,None)):
         label = g_core.value(s,RDFS.label)
-        writer.writerow([o.rsplit('#')[1],s.rsplit('#')[1],label])
+        writer.writerow([o.split('/')[-1],s.split('/')[-1],label])
     csv_file.close
 
 def map_to_turtle(code):
