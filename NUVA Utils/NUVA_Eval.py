@@ -4,173 +4,44 @@ from pathlib import Path
 import csv
 import json
 import os
-import shutil
 import math
+from tkinter import *
+from tkinter import filedialog
 
 BaseURI="http://ivci.org/NUVA/"
-full_fname="nuva_ivci.rdf"
-core_fname ="nuva_core.ttl"
 
-def get_nuva_version():
-    url="https://ans.mesvaccins.net/last_version.json"
-    response=urlopen(url)
-    data_json=json.loads(response.read())
-    return (data_json['version'])
-
-def get_nuva(version):
-  print ("Retrieving NUVA version "+version)
-  fname1 = "nuva_ans.rdf";
-  urlretrieve("https://ans.mesvaccins.net/versions/"+version+"/nuva.rdf",fname1)
-
-  # Change base URL
-  f1= open(fname1,'r',encoding="utf-8")
-  f2= open(full_fname,'w',encoding="utf-8")
-  for line in f1:
-      relocated = line.replace("data.esante.gouv.fr","ivci.org")
-      f2.write(relocated.replace("NUVA#","NUVA/"))
-  f1.close()
-  f2.close()
-
-def split_nuva():
-    print ("Loading graph to split")
-    g = Graph()
-    g.parse(full_fname)
-
-    CodesParent=URIRef(BaseURI+"Code")
-    graph_codes = {}
-    graph_langs = {}
-
-    print("Initializing subgraphs for code systems")
-    Codes = g.subjects(RDFS.subClassOf,CodesParent)
-    for Code in Codes:
-        label=g.value(Code,RDFS.label)
-        graph_codes[label] = Graph(store="Oxigraph")
-
-    print("Initializing core graph")    
-    g_core= Graph(store="Oxigraph")
-    
-    for s,p,o in g:
-
-        # Extract languages
-        if (o.__class__.__name__== "Literal"):
-            lang = o.language
-            if (lang!="en" and lang!=None): 
-                if (not lang in graph_langs.keys()):
-                    graph_langs[lang] = Graph(store="Oxigraph");
-                graph_langs[lang].add((s,p,o))
-                continue
-
-        # Extract properties of external codes
-        sparent=g.value(s,RDFS.subClassOf)
-        if (g.value(sparent,RDFS.subClassOf) == CodesParent):
-            system = g.value(sparent,RDFS.label)
-            graph_codes[system].add((s,p,o))
-            continue
-
-        # Extract binding of external codes
-        oparent=g.value(o,RDFS.subClassOf)
-        if (g.value(oparent,RDFS.subClassOf) == CodesParent):
-            system = g.value(oparent,RDFS.label)
-            graph_codes[system].add((s,p,o))
-            continue
-
-        # Otherwise the triple goes to core graph
-        g_core.add((s,p,o))
-
-    NUVS = Namespace("http://ivci.org/NUVA/nuvs#")
-    NUVA = Namespace("http://ivci.org/NUVA/") 
-    g_core.bind("nuvs",NUVS)
-    g_core.bind("nuva",NUVA)
-
-    print(f"Core NUVA has {len(g_core)} statements.")
-    g_core.serialize(destination=core_fname)
-
-    for lang in graph_langs:
-        print(f"There are {len(graph_langs[lang])} statements for language {lang}.")
-        fname = "nuva_lang_"+lang+".ttl"
-        graph_langs[lang].bind("nuva",NUVA)
-        graph_langs[lang].serialize(destination=fname)
-
-    for code in graph_codes:
-        csv_fname = "nuva_refcode_"+code+".csv"
-        print(f"There are {len(graph_codes[code])} statements for code {code}.")
-        fname = "nuva_refcode_"+code+".ttl"
-        graph_codes[code].bind("nuva",NUVA)
-        graph_codes[code].serialize(destination=fname)
-
-        csv_file = open(csv_fname,'w',encoding="utf-8-sig",newline='')
-        writer = csv.writer(csv_file, delimiter=';')
-        writer.writerow([code,"NUVA","Label"])
-
-        for s,p,o in graph_codes[code].triples((None,SKOS.exactMatch,None)):
-            label = g_core.value(s,RDFS.label)
-            writer.writerow([o.split('/')[-1],s.split('/')[-1],label])
-        csv_file.close
-
-def core_to_csv():
-    core_fname = "nuva_core.ttl"
-    csv_fname = "nuva_core.csv"
-    g_core=Graph(store="Oxigraph")
-    g_core.parse (core_fname)
-    csv_file = open(csv_fname,'w',encoding="utf-8",newline='')
-    writer = csv.writer(csv_file, delimiter=';')
-    writer.writerow(["NUVA","Label","Comment"])
-
-    VaccinesParent=URIRef(BaseURI+"Vaccine")
-        
-    for vaccine in g_core.subjects(RDFS.subClassOf,VaccinesParent):
-        writer.writerow([str(g_core.value(vaccine,SKOS.notation)), str(g_core.value(vaccine,RDFS.label)), str(g_core.value(vaccine,RDFS.comment))])
-    csv_file.close()
-
-def lang_table(l1,l2):
-    fname1 = "nuva_lang_"+l1+".ttl"
-    fname2 = "nuva_lang_"+l2+".ttl"
-    csv_fname = "nuva_lang_"+l1+"_"+l2+".csv"
-
-    g1= Graph(store="Oxigraph")
-    g1.parse (fname1)
-    g2 = Graph(store="Oxigraph")
-    g2.parse (fname2)
-
-    csv_file = open(csv_fname,'w',encoding="utf-8-sig",newline='')
-    writer = csv.writer(csv_file, delimiter=';')
-    writer.writerow([l1,l2])
-
-    for (s,p,o1) in g1:
-        o2 = g2.value(s,p,None)
-        writer.writerow([o1,o2])
             
-def eval_code(code,fullset):
-    if fullset:
+def eval_code(filename,option):
+    if option == 1:
         suffix="_full"
+        fullset = True
     else:
         suffix="_gen"
-    rev_fname = "nuva_reverse_"+code+suffix+".csv"
-    best_fname="nuva_best_"+code+suffix+".csv"
-    metrics_fname = "nuva_metrics_"+code+suffix+".txt"
-    csv_fname = "nuva_refcode_"+code+".csv"
-    print ("Loading core graph")
-    g = Graph(store="Oxigraph")
-    g.parse(core_fname)
+        fullset = False
 
+    say ("Loading code graph")
 
-    print ("Loading code graph")
-
-    csv_file = open(csv_fname,'r',encoding="utf-8-sig",newline='')
+    csv_file = open(filename,'r',encoding="utf-8-sig",newline='')
     reader = csv.DictReader(csv_file,delimiter=';')
     code = reader.fieldnames[0]
 
+    Path(code).mkdir(parents=True,exist_ok=True)
+
+    rev_fname = code+"/nuva_reverse_"+code+suffix+".csv"
+    best_fname=code+"/nuva_best_"+code+suffix+".csv"
+    metrics_fname = code+"/nuva_metrics_"+code+suffix+".txt"
+
     codeParent=URIRef(BaseURI+code)
     if ((codeParent,None,None) not in g):
-        print ("Unknown CodeSystem "+code)
-        # Ajouter ici la création du code parent
-        return
+        g.add((codeParent,RDFS.Class,OWL.Class))
+        g.add((codeParent,RDFS.subClassOf,URIRef(BaseURI+'Code')))
+        g.add((codeParent,RDFS.label,Literal(code)))
 
     for row in reader:
         codeURI=URIRef(BaseURI+row[code])
         nuvaURI=URIRef(BaseURI+row["NUVA"])
         if ((nuvaURI,None,None) not in g):
-            print ("Mapping to unknown NUVA code "+row["NUVA"])            
+            say ("Mapping to unknown NUVA code "+row["NUVA"])            
 
         codeValue=row[code].rsplit('-')[1]
 
@@ -185,7 +56,7 @@ def eval_code(code,fullset):
     #if os.path.isfile(work_fname): g.parse(work_fname)
     #else: g.parse(ref_fname)
 
-    print ("Retrieve the list of NUVA codes")
+    say ("Retrieve the list of NUVA codes")
     q1="""
     SELECT ?vacnot ?label ?abstract WHERE {
       ?vac rdfs:subClassOf nuva:Vaccine .
@@ -212,7 +83,7 @@ def eval_code(code,fullset):
     nbnuva = len(bestcodes)
 
     #if fullset:
-    print("Retrieve NUVA codes matching specific external codes")    
+    say("Retrieve NUVA codes matching specific external codes")    
     q2="""
     SELECT ?extnot ?rlabel ?rnot ?abstract WHERE { 
     ?extcode rdfs:subClassOf nuva:"""+code+""" .
@@ -239,7 +110,7 @@ def eval_code(code,fullset):
             bestcodes[nuva_code]['codes'].append(extnot)
 
 
-    print("Retrieve NUVA codes matching abstract external codes")    
+    say("Retrieve NUVA codes matching abstract external codes")    
     q3="""
    SELECT ?extnot ?rlabel ?rnot (count(?codevac) as ?nvac) (GROUP_CONCAT(?vacnot) as ?lvac) WHERE { 
    ?extcode rdfs:subClassOf nuva:"""+code+""" .
@@ -301,7 +172,7 @@ def eval_code(code,fullset):
                 bestcodes[nuva_code]['codes']=[extnot]
 
 
-    print ("Create best codes report "+best_fname)
+    say ("Create best codes report "+best_fname)
     best_file = open(best_fname,'w',encoding="utf-8",newline='')
     best_writer = csv.writer(best_file, delimiter=';')
     best_writer.writerow(["NUVA","Label","IsAbstract", "Cardinality","Best "+code])
@@ -321,7 +192,7 @@ def eval_code(code,fullset):
             total_equiv += nbequiv[nuva_code]
     best_file.close
 
-    print ("Create reverse codes report "+rev_fname)
+    say ("Create reverse codes report "+rev_fname)
     rev_file = open(rev_fname,'w',encoding="utf-8",newline='')
     rev_writer = csv.writer(rev_file, delimiter=';')
     rev_writer.writerow([code,"Label","Cardinality","May code", "Blur", "Best code for"])
@@ -337,15 +208,15 @@ def eval_code(code,fullset):
     # All aligned codes, abstract or not, are now in rev_codes
     nbcodes = len(revcodes)
 
-
-
     completeness = (nbnuva-unmapped)/nbnuva
-    precision = nbcodes/totalblur
+    precision = 0
+    if totalblur != 0:
+        precision = nbcodes/totalblur
     redundancy = 0
     if nuva_equiv != 0:
         redundancy = total_equiv/nuva_equiv
 
-    print ("Create metrics report "+metrics_fname)
+    say ("Create metrics report "+metrics_fname)
     metrics_file = open(metrics_fname,'w',encoding="utf-8",newline='')
     print (f"NUVA version :{g.value(URIRef('http://ivci.org/NUVA'),OWL.versionInfo)}\n", file=metrics_file)
     print (f"Number of NUVA concepts : {nbnuva}",file=metrics_file)
@@ -356,23 +227,47 @@ def eval_code(code,fullset):
     print ("Precision: {:.1%}".format(precision),file=metrics_file)
     print ("Redundancy: {:.3}".format(redundancy),file=metrics_file)
     metrics_file.close()
+    Message.set("Select a CSV file")
 
-# Here the main program - Adapt the work directory to your environment
+def say(text):
+    result.insert('end','\n'+text)
+    root.update()
 
-os.chdir(str(Path.home())+"/Documents/NUVA")
-#get_nuva(get_nuva_version())
-#split_nuva()
-#core_to_csv()
-#refturtle_to_map("CVX")
-#shutil.copyfile("nuva_refcode_CVX.csv","nuva_code_CVX.csv")
-#map_to_turtle("CVX")
-eval_code("CVX",False) # Assess CVX against generic NUVA codes
-#eval_code("CVX",True)  # Assess CVX against all NUVA codes
-#eval_code("ATC",False)
-#eval_code("ATC",True)
-#eval_code("CIS",True)
-#eval_code("CVC", False)
-#eval_code("CVC", True)
-#eval_code("CNK", True)
-#eval_code("SNOMED-CT", True)
+def get_file():
+    result.delete('1.0',END)
+    filename = filedialog.askopenfilename(filetypes=[("CSV","*.csv")])
+    if filename != '':
+        Message.set("Processing")
+        os.chdir(os.path.dirname(filename))
+        eval_code(filename, var.get())
+
+
+root = Tk()
+var = IntVar()
+frame = Frame()
+frame.pack()
+R1 = Radiobutton(frame, text="All concepts", variable=var, value=1)
+R1.pack( side=LEFT )
+R1.select()
+R2 = Radiobutton(frame, text="Abstract vaccines", variable=var, value=2)
+R2.pack( side = LEFT )
+Message = StringVar()
+Label = Label(root,textvariable = Message)
+Label.pack()
+Message.set("Loading core graph, please wait.")
+root.update()
+
+nuva_file = urlopen("https://ivci.org/nuva/nuva_core.ttl")
+g = Graph(store="Oxigraph")
+g.parse(nuva_file.read())
+
+Message.set("Select a CSV file")
+actFile = Button(root,text='Select', command = get_file)
+actFile.pack()
+result=Text(root,width=100,height=10)
+result.pack()
+
+root.mainloop()
+
+
 
